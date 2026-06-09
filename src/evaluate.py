@@ -24,8 +24,8 @@ from typing import List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
 from langsmith import Client
-from langchain import hub
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.tracers.context import collect_runs
 from utils import check_env_vars, format_score, print_section_header, get_llm as get_configured_llm
 from metrics import evaluate_f1_score, evaluate_clarity, evaluate_precision
 
@@ -105,7 +105,7 @@ def create_evaluation_dataset(client: Client, dataset_name: str, jsonl_path: str
 def pull_prompt_from_langsmith(prompt_name: str) -> ChatPromptTemplate:
     try:
         print(f"   Puxando prompt do LangSmith Hub: {prompt_name}")
-        prompt = hub.pull(prompt_name)
+        prompt = Client().pull_prompt(prompt_name, dangerously_pull_public_prompt=True)
         print(f"   ✓ Prompt carregado com sucesso")
         return prompt
 
@@ -151,8 +151,11 @@ def evaluate_prompt_on_example(
 
         chain = prompt_template | llm
 
-        response = chain.invoke(inputs)
-        answer = response.content
+        with collect_runs() as cb:
+            response = chain.invoke(inputs)
+            answer = response.content
+
+        run_id = cb.traced_runs[0].id if cb.traced_runs else None
 
         reference = outputs.get("reference", "") if isinstance(outputs, dict) else ""
 
@@ -164,7 +167,8 @@ def evaluate_prompt_on_example(
         return {
             "answer": answer,
             "reference": reference,
-            "question": question
+            "question": question,
+            "run_id": run_id,
         }
 
     except Exception as e:
@@ -212,6 +216,19 @@ def evaluate_prompt(
                 precision_scores.append(precision["score"])
 
                 print(f"      [{i}/{len(examples)}] F1:{f1['score']:.2f} Clarity:{clarity['score']:.2f} Precision:{precision['score']:.2f}")
+
+                run_id = result.get("run_id")
+                if run_id:
+                    helpfulness = (clarity["score"] + precision["score"]) / 2
+                    correctness = (f1["score"] + precision["score"]) / 2
+                    try:
+                        client.create_feedback(run_id, key="f1_score", score=f1["score"])
+                        client.create_feedback(run_id, key="clarity", score=clarity["score"])
+                        client.create_feedback(run_id, key="precision", score=precision["score"])
+                        client.create_feedback(run_id, key="helpfulness", score=helpfulness)
+                        client.create_feedback(run_id, key="correctness", score=correctness)
+                    except Exception as e:
+                        print(f"      ⚠️  Erro ao salvar feedback: {e}")
 
         avg_f1 = sum(f1_scores) / len(f1_scores) if f1_scores else 0.0
         avg_clarity = sum(clarity_scores) / len(clarity_scores) if clarity_scores else 0.0
