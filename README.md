@@ -334,3 +334,260 @@ python src/evaluate.py
 - **Não altere os datasets de avaliação** - apenas os prompts em `prompts/bug_to_user_story_v2.yml`
 - **Itere, itere, itere** - é normal precisar de 3-5 iterações para atingir 0.8 em todas as métricas
 - **Documente seu processo** - a jornada de otimização é tão importante quanto o resultado final
+
+---
+
+## Técnicas Aplicadas (Fase 2)
+
+Apliquei três técnicas no prompt v2: **Role Prompting**, **Few-shot Learning** (obrigatório) e **Chain of Thought**.
+
+---
+
+#### 1. Role Prompting
+
+O problema do v1 era simples: o modelo não sabia quem ele deveria "ser". Sem contexto de persona, ele respondia como um assistente genérico — output vago, sem a estrutura que um time de desenvolvimento realmente precisa.
+
+A solução foi definir uma persona concreta de Product Manager sênior logo no início do system prompt:
+
+```
+Você é um Product Manager sênior com mais de 10 anos de experiência em metodologias ágeis,
+especializado em transformar problemas técnicos em histórias de usuário claras e acionáveis.
+Você trabalha em produtos de alto impacto e sabe que a qualidade da User Story define
+a qualidade da correção que o time de desenvolvimento entregará.
+```
+
+Isso fez diferença direta nas métricas de Clarity e Helpfulness — o modelo passou a usar o vocabulário e o nível de detalhe corretos para o contexto ágil.
+
+---
+
+#### 2. Few-shot Learning (obrigatório)
+
+O v1 não mostrava nenhum exemplo de saída esperada. O modelo "chutava" o formato toda vez. Isso gerava respostas inconsistentes, às vezes sem critérios de aceitação, às vezes sem separar bugs simples de complexos.
+
+Adicionei três exemplos no system prompt, um para cada nível de complexidade:
+
+- **Bug simples** (1 problema direto): User Story mínima no formato Dado/Quando/Então
+- **Bug médio** (contexto técnico relevante): User Story + seção "Contexto Técnico" com detalhes do problema
+- **Bug complexo** (múltiplos problemas): User Story com seções `===`, critérios separados por problema e tasks técnicas sugeridas
+
+Essa divisão por nível foi o que mais impactou o F1-Score e a Precision, porque o modelo parou de usar o mesmo formato genérico para tudo.
+
+---
+
+#### 3. Chain of Thought (CoT)
+
+Bugs de software costumam ter mais de um problema embutido no mesmo relato. Sem uma instrução explícita de análise, o modelo tendia a capturar só o problema mais óbvio e ignorar os demais.
+
+Adicionei um bloco de raciocínio passo a passo antes do modelo gerar qualquer saída:
+
+```
+## Seu processo de análise (pense passo a passo):
+1. Leia o relato completo e identifique QUANTOS problemas distintos existem
+2. Identifique QUEM é afetado (persona do usuário) e qual o impacto no negócio
+3. Classifique a complexidade: simples / médio / complexo
+4. Escolha o formato adequado à complexidade (veja exemplos abaixo)
+5. Capture todos os detalhes técnicos mencionados (IDs, stack traces, métricas, logs)
+6. Crie critérios de aceitação mensuráveis e testáveis para CADA problema identificado
+```
+
+Isso melhorou principalmente o Correctness — a resposta passou a refletir fielmente tudo que estava no bug report, não apenas o trecho mais saliente.
+
+---
+
+## Resultados Finais
+
+### Dashboard LangSmith
+
+**Link público do projeto:** [https://smith.langchain.com/projects/prompt-optimization-challenge-resolved](https://smith.langchain.com/projects/prompt-optimization-challenge-resolved)
+
+**Prompt v1 (base — baixa qualidade):** [https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v1](https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v1)
+
+**Prompt v2 publicado (otimizado — público):** [https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v2](https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v2)
+
+---
+
+### Dataset de avaliação — 15 exemplos
+
+![Dataset LangSmith com 15 exemplos](EVIDENCIAS_LANGSMITH/DATASETS.png)
+
+---
+
+### Tracing detalhado de execuções
+
+![Tracing das execuções no LangSmith](EVIDENCIAS_LANGSMITH/TRACING.png)
+
+**Links públicos de tracing (3 exemplos):**
+
+- [Tracing 1](https://smith.langchain.com/public/14279bbc-8d09-4c36-9500-8bd40f23432b/r)
+- [Tracing 2](https://smith.langchain.com/public/1c7c894a-86e7-435d-ad03-2a4b2f8bc3fa/r)
+- [Tracing 3](https://smith.langchain.com/public/22d9b051-7466-4316-90ff-42524cc14daa/r)
+
+---
+
+### Métricas da avaliação final (v2) — 15 exemplos
+
+```
+==================================================
+Prompt: joao-floriano/bug_to_user_story_v2
+==================================================
+
+Métricas Derivadas:
+  - Helpfulness: 0.92 ✓
+  - Correctness: 0.86 ✓
+
+Métricas Base:
+  - F1-Score: 0.80 ✓
+  - Clarity:   0.92 ✓
+  - Precision: 0.92 ✓
+
+📊 MÉDIA GERAL: 0.8826
+
+✅ STATUS: APROVADO - Todas as métricas >= 0.8
+```
+
+---
+
+### Tabela comparativa: v1 (ruim) vs v2 (otimizado)
+
+| Métrica       | v1 (baseline) | v2 (otimizado) | Variação |
+|---------------|:-------------:|:--------------:|:--------:|
+| Helpfulness   | 0.45          | **0.92**       | +104%    |
+| Correctness   | 0.52          | **0.86**       | +65%     |
+| F1-Score      | 0.48          | **0.80**       | +67%     |
+| Clarity       | 0.50          | **0.92**       | +84%     |
+| Precision     | 0.46          | **0.92**       | +100%    |
+| **Média**     | **0.48**      | **0.88**       | **+83%** |
+| **Status**    | ❌ REPROVADO  | ✅ APROVADO    |          |
+
+> Os valores de v1 são os valores de referência do enunciado do desafio, usados como baseline de comparação.
+
+---
+
+### Detalhamento por exemplo (v2)
+
+| # | F1-Score | Clarity | Precision |
+|---|:--------:|:-------:|:---------:|
+| 1  | 0.87 | 0.90 | 0.90 |
+| 2  | 0.75 | 0.90 | 0.90 |
+| 3  | 0.75 | 0.90 | 1.00 |
+| 4  | 0.58 | 0.90 | 0.90 |
+| 5  | 0.65 | 0.90 | 0.90 |
+| 6  | 0.85 | 0.95 | 1.00 |
+| 7  | 0.85 | 0.95 | 0.93 |
+| 8  | 1.00 | 1.00 | 1.00 |
+| 9  | 0.90 | 0.95 | 0.93 |
+| 10 | 0.75 | 0.85 | 0.90 |
+| 11 | 0.75 | 0.85 | 0.80 |
+| 12 | 0.80 | 0.90 | 0.90 |
+| 13 | 0.80 | 0.90 | 1.00 |
+| 14 | 1.00 | 1.00 | 1.00 |
+| 15 | 0.75 | 0.90 | 0.70 |
+
+---
+
+## Como Executar
+
+### Pré-requisitos
+
+- Python 3.9+
+- Conta no [LangSmith](https://smith.langchain.com/) com API Key
+- API Key da OpenAI **ou** Google Gemini (modelo gratuito)
+- Git
+
+### Dependências
+
+```bash
+# Criar e ativar ambiente virtual
+python -m venv venv
+source venv/bin/activate        # Linux/Mac
+venv\Scripts\activate           # Windows
+
+# Instalar dependências
+pip install -r requirements.txt
+```
+
+### Configurar variáveis de ambiente
+
+Copie o arquivo `.env.example` para `.env` e preencha as variáveis:
+
+```bash
+cp .env.example .env
+```
+
+```env
+# LangSmith
+LANGSMITH_TRACING=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=ls__sua_chave_aqui
+LANGSMITH_PROJECT=prompt-optimization-challenge-resolved
+USERNAME_LANGSMITH_HUB=seu_username_aqui
+
+# OpenAI (se usar OpenAI)
+OPENAI_API_KEY=sk-sua_chave_aqui
+LLM_PROVIDER=openai
+LLM_MODEL=gpt-4o-mini
+EVAL_MODEL=gpt-4o
+
+# Google Gemini (alternativa gratuita)
+GOOGLE_API_KEY=sua_chave_aqui
+LLM_PROVIDER=google
+LLM_MODEL=gemini-2.5-flash
+EVAL_MODEL=gemini-2.5-flash
+```
+
+> Para descobrir seu `USERNAME_LANGSMITH_HUB`: publique qualquer prompt no LangSmith Hub, abra-o e clique no ícone de cadeado (🔒).
+
+---
+
+### Fase 1 — Pull do prompt base
+
+```bash
+python src/pull_prompts.py
+```
+
+Faz pull de `leonanluppi/bug_to_user_story_v1` e salva em `prompts/bug_to_user_story_v1.yml`.
+
+---
+
+### Fase 2 — Otimização do prompt
+
+Edite o arquivo `prompts/bug_to_user_story_v2.yml` aplicando as técnicas de prompt engineering. O arquivo já está otimizado neste repositório com Role Prompting, Few-shot Learning e Chain of Thought.
+
+---
+
+### Fase 3 — Push do prompt otimizado
+
+```bash
+python src/push_prompts.py
+```
+
+Valida o prompt e faz push público para `{seu_username}/bug_to_user_story_v2` no LangSmith Hub.
+
+---
+
+### Fase 4 — Avaliação
+
+```bash
+python src/evaluate.py
+```
+
+Executa avaliação completa com 15 exemplos e exibe as 5 métricas. O critério de aprovação é todas as métricas >= 0.8.
+
+---
+
+### Fase 5 — Testes automatizados
+
+```bash
+pytest tests/test_prompts.py -v
+```
+
+Executa os 6 testes de validação do prompt otimizado:
+
+| Teste | O que valida |
+|-------|-------------|
+| `test_prompt_has_system_prompt` | Campo existe e não está vazio |
+| `test_prompt_has_role_definition` | Persona definida no prompt |
+| `test_prompt_mentions_format` | Formato de saída especificado |
+| `test_prompt_has_few_shot_examples` | Exemplos de entrada/saída presentes |
+| `test_prompt_no_todos` | Nenhum `[TODO]` esquecido |
+| `test_minimum_techniques` | Pelo menos 2 técnicas nos metadados |
