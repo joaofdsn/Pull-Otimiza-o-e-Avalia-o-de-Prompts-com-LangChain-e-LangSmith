@@ -398,8 +398,6 @@ Isso melhorou principalmente o Correctness — a resposta passou a refletir fiel
 
 ### Dashboard LangSmith
 
-**Link público do projeto:** [https://smith.langchain.com/projects/prompt-optimization-challenge-resolved](https://smith.langchain.com/projects/prompt-optimization-challenge-resolved)
-
 **Prompt v1 (base — baixa qualidade):** [https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v1](https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v1)
 
 **Prompt v2 publicado (otimizado — público):** [https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v2](https://smith.langchain.com/hub/joao-floriano/bug_to_user_story_v2)
